@@ -32,6 +32,18 @@
 #include "freedreno_ringbuffer.h"
 #include "msm_priv.h"
 
+/*
+ * Stupid/simple growable array implementation:
+ */
+#define DECLARE_ARRAY(type, name) \
+	unsigned nr_ ## name, max_ ## name; \
+	type * name;
+
+#define APPEND(x, name) ({ \
+	(x)->name = grow((x)->name, (x)->nr_ ## name, &(x)->max_ ## name, sizeof((x)->name[0])); \
+	(x)->nr_ ## name ++; \
+})
+
 /* represents a single cmd buffer in the submit ioctl.  Each cmd buffer has
  * a backing bo, and a reloc table.
  */
@@ -42,8 +54,7 @@ struct msm_cmd {
 	struct fd_bo *ring_bo;
 
 	/* reloc's table: */
-	struct drm_msm_gem_submit_reloc *relocs;
-	uint32_t nr_relocs, max_relocs;
+	DECLARE_ARRAY(struct drm_msm_gem_submit_reloc, relocs);
 
 	uint32_t size;
 };
@@ -58,22 +69,18 @@ struct msm_ringbuffer {
 	 */
 	struct {
 		/* bo's table: */
-		struct drm_msm_gem_submit_bo *bos;
-		uint32_t nr_bos, max_bos;
+		DECLARE_ARRAY(struct drm_msm_gem_submit_bo, bos);
 
 		/* cmd's table: */
-		struct drm_msm_gem_submit_cmd *cmds;
-		uint32_t nr_cmds, max_cmds;
+		DECLARE_ARRAY(struct drm_msm_gem_submit_cmd, cmds);
 	} submit;
 
 	/* should have matching entries in submit.bos: */
 	/* Note, only in parent ringbuffer */
-	struct fd_bo **bos;
-	uint32_t nr_bos, max_bos;
+	DECLARE_ARRAY(struct fd_bo *, bos);
 
 	/* should have matching entries in submit.cmds: */
-	struct msm_cmd **cmds;
-	uint32_t nr_cmds, max_cmds;
+	DECLARE_ARRAY(struct msm_cmd *, cmds);
 
 	/* List of physical cmdstream buffers (msm_cmd) assocated with this
 	 * logical fd_ringbuffer.
@@ -181,11 +188,6 @@ static void *grow(void *ptr, uint32_t nr, uint32_t *max, uint32_t sz)
 	}
 	return ptr;
 }
-
-#define APPEND(x, name) ({ \
-	(x)->name = grow((x)->name, (x)->nr_ ## name, &(x)->max_ ## name, sizeof((x)->name[0])); \
-	(x)->nr_ ## name ++; \
-})
 
 static struct msm_cmd *current_cmd(struct fd_ringbuffer *ring)
 {
