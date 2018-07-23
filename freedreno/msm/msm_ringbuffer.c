@@ -393,6 +393,31 @@ static void dump_submit(struct msm_ringbuffer *msm_ring)
 	}
 }
 
+static struct drm_msm_gem_submit_reloc *
+handle_stateobj_relocs(struct fd_ringbuffer *parent, struct fd_ringbuffer *stateobj,
+		struct drm_msm_gem_submit_reloc *orig_relocs, unsigned nr_relocs)
+{
+	struct msm_ringbuffer *msm_ring = to_msm_ringbuffer(stateobj);
+	struct drm_msm_gem_submit_reloc *relocs = malloc(sizeof(*relocs));
+	unsigned i;
+
+	for (i = 0; i < nr_relocs; i++) {
+		unsigned idx = orig_relocs[i].reloc_idx;
+		struct fd_bo *bo = msm_ring->bos[idx];
+		unsigned flags = 0;
+
+		if (msm_ring->submit.bos[idx].flags & MSM_SUBMIT_BO_READ)
+			flags |= FD_RELOC_READ;
+		if (msm_ring->submit.bos[idx].flags & MSM_SUBMIT_BO_WRITE)
+			flags |= FD_RELOC_WRITE;
+
+		relocs[i] = orig_relocs[i];
+		relocs[i].reloc_idx = bo2idx(parent, bo, flags);
+	}
+
+	return relocs;
+}
+
 static int msm_ringbuffer_flush(struct fd_ringbuffer *ring, uint32_t *last_start,
 		int in_fence_fd, int *out_fence_fd)
 {
@@ -403,6 +428,8 @@ static int msm_ringbuffer_flush(struct fd_ringbuffer *ring, uint32_t *last_start
 	};
 	uint32_t i;
 	int ret;
+
+	assert(!ring->parent);
 
 	if (in_fence_fd != -1) {
 		req.flags |= MSM_SUBMIT_FENCE_FD_IN | MSM_SUBMIT_NO_IMPLICIT;
@@ -421,8 +448,22 @@ static int msm_ringbuffer_flush(struct fd_ringbuffer *ring, uint32_t *last_start
 		struct msm_cmd *msm_cmd = msm_ring->cmds[i];
 		uint32_t a = find_next_reloc_idx(msm_cmd, 0, cmd->submit_offset);
 		uint32_t b = find_next_reloc_idx(msm_cmd, a, cmd->submit_offset + cmd->size);
-		cmd->relocs = VOID2U64(&msm_cmd->relocs[a]);
-		cmd->nr_relocs = (b > a) ? b - a : 0;
+		struct drm_msm_gem_submit_reloc *relocs = &msm_cmd->relocs[a];
+		unsigned nr_relocs = (b > a) ? b - a : 0;
+
+		/* for reusable stateobjs, the reloc table has reloc_idx that
+		 * points into it's own private bos table, rather than the global
+		 * bos table used for the submit, so we need to add the stateobj's
+		 * bos to the global table and construct new relocs table with
+		 * corresponding reloc_idx
+		 */
+		if (msm_cmd->ring->flags & FD_RINGBUFFER_OBJECT) {
+			relocs = handle_stateobj_relocs(ring, msm_cmd->ring,
+					relocs, nr_relocs);
+		}
+
+		cmd->relocs = VOID2U64(relocs);
+		cmd->nr_relocs = nr_relocs;
 	}
 
 	/* needs to be after get_cmd() as that could create bos/cmds table: */
@@ -447,6 +488,15 @@ static int msm_ringbuffer_flush(struct fd_ringbuffer *ring, uint32_t *last_start
 
 		if (out_fence_fd) {
 			*out_fence_fd = req.fence_fd;
+		}
+	}
+
+	/* free dynamically constructed stateobj relocs tables: */
+	for (i = 0; i < msm_ring->submit.nr_cmds; i++) {
+		struct drm_msm_gem_submit_cmd *cmd = &msm_ring->submit.cmds[i];
+		struct msm_cmd *msm_cmd = msm_ring->cmds[i];
+		if (msm_cmd->ring->flags & FD_RINGBUFFER_OBJECT) {
+			free(U642VOID(cmd->relocs));
 		}
 	}
 
@@ -589,8 +639,6 @@ drm_private struct fd_ringbuffer * msm_ringbuffer_new(struct fd_pipe *pipe,
 {
 	struct msm_ringbuffer *msm_ring;
 	struct fd_ringbuffer *ring;
-
-	assert(!flags);
 
 	msm_ring = calloc(1, sizeof(*msm_ring));
 	if (!msm_ring) {
