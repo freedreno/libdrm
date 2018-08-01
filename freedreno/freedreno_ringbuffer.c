@@ -124,6 +124,13 @@ void fd_ringbuffer_grow(struct fd_ringbuffer *ring, uint32_t ndwords)
 	ring->cur = ring->last_start = ring->start;
 }
 
+struct fd_bo *fd_ringbuffer_get_current_bo(struct fd_ringbuffer *ring)
+{
+	assert(ring->funcs->get_current_bo);     /* unsupported on kgsl */
+
+	return ring->funcs->get_current_bo(ring);
+}
+
 uint32_t fd_ringbuffer_timestamp(struct fd_ringbuffer *ring)
 {
 	return ring->last_timestamp;

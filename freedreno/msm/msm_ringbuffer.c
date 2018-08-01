@@ -512,6 +512,11 @@ static void msm_ringbuffer_grow(struct fd_ringbuffer *ring, uint32_t size)
 	ring_cmd_new(ring, size);
 }
 
+static struct fd_bo *msm_ringbuffer_get_current_bo(struct fd_ringbuffer *ring)
+{
+	return current_cmd(ring)->ring_bo;
+}
+
 static void msm_ringbuffer_reset(struct fd_ringbuffer *ring)
 {
 	flush_reset(ring);
@@ -632,6 +637,7 @@ static const struct fd_ringbuffer_funcs funcs = {
 		.emit_reloc_ring = msm_ringbuffer_emit_reloc_ring,
 		.cmd_count = msm_ringbuffer_cmd_count,
 		.destroy = msm_ringbuffer_destroy,
+		.get_current_bo = msm_ringbuffer_get_current_bo,
 };
 
 drm_private struct fd_ringbuffer * msm_ringbuffer_new(struct fd_pipe *pipe,

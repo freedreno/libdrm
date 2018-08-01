@@ -152,6 +152,7 @@ struct fd_ringbuffer_funcs {
 			uint32_t submit_offset, uint32_t size);
 	uint32_t (*cmd_count)(struct fd_ringbuffer *ring);
 	void (*destroy)(struct fd_ringbuffer *ring);
+	struct fd_bo *(*get_current_bo)(struct fd_ringbuffer *ring);
 };
 
 struct fd_bo_funcs {

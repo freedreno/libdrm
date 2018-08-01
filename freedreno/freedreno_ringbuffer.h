@@ -72,6 +72,7 @@ int fd_ringbuffer_flush2(struct fd_ringbuffer *ring, int in_fence_fd,
 		int *out_fence_fd);
 void fd_ringbuffer_grow(struct fd_ringbuffer *ring, uint32_t ndwords);
 uint32_t fd_ringbuffer_timestamp(struct fd_ringbuffer *ring);
+struct fd_bo *fd_ringbuffer_get_current_bo(struct fd_ringbuffer *ring);
 
 static inline void fd_ringbuffer_emit(struct fd_ringbuffer *ring,
 		uint32_t data)
